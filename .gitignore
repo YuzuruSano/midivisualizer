@@ -1,0 +1,140 @@
+# openFrameworks gitignore
+
+# Build outputs
+bin/
+obj/
+*.app
+*.exe
+
+# Compiled Object files
+*.o
+*.obj
+*.slo
+*.lo
+*.so
+*.dylib
+*.dll
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Debug files
+*.dSYM/
+*.su
+
+# IDE files
+.vscode/
+*.xcodeproj/
+*.sln
+*.vcxproj*
+*.xcworkspace/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# openFrameworks specific
+#######################
+
+# Build files
+bin/
+obj/
+*.app
+
+# Xcode
+project.xcconfig
+openFrameworks-Info.plist
+*.xcodeproj
+
+# Code::Blocks
+*.cbp
+*.depend
+*.layout
+
+# Visual Studio
+*.sln
+*.vcxproj
+*.vcxproj.filters
+
+# Eclipse
+.metadata
+bin/
+tmp/
+*.tmp
+*.bak
+*.swp
+*~.nib
+local.properties
+.settings/
+.loadpath
+.recommenders
+
+# QtCreator
+*.pro.user
+*.pro.user.*
+*.qbs.user
+*.qbs.user.*
+
+# IntelliJ
+.idea/
+
+# Temporary files
+*~
+*.tmp
+*.temp
+
+# Log files
+*.log
+
+# Package files
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+
+# MIDI Visualizer specific
+#########################
+
+# Backup files
+*.backup
+*.bak
+
+# Screenshot files (unless explicitly needed)
+screenshot_*.png
+*.jpg
+*.jpeg
+
+# Project specific temp files
+temp/
+tmp/
+cache/
+
+# User specific configuration
+config/user_*
+settings/local_*
+
+# Performance profiling data
+*.prof
+*.perf
