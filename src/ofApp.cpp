@@ -31,6 +31,10 @@ void ofApp::setup(){
         visualSystems[currentSystemIndex]->setActive(true);
     }
     
+    // グリッチシステムの初期化
+    glitchAreaSystem.setup(ofGetWidth(), ofGetHeight());
+    glitchOutputFbo.allocate(ofGetWidth(), ofGetHeight(), GL_RGBA32F_ARB);
+    
     lastActivityTime = ofGetElapsedTimef();
 }
 
@@ -56,6 +60,9 @@ void ofApp::update(){
         }
     }
     
+    // グリッチシステムの更新
+    glitchAreaSystem.update(deltaTime);
+    
     // UIのフェードアウト
     float timeSinceActivity = ofGetElapsedTimef() - lastActivityTime;
     if (timeSinceActivity > 3.0f) {
@@ -66,6 +73,10 @@ void ofApp::update(){
 }
 
 void ofApp::draw(){
+    // 一時FBOに通常の描画を行う
+    glitchOutputFbo.begin();
+    ofClear(0, 0, 0, 255);
+    
     if (isTransitioning) {
         // トランジション描画（クロスフェード）
         drawTransition();
@@ -77,6 +88,17 @@ void ofApp::draw(){
                 break; // 一度に一つだけ描画
             }
         }
+    }
+    glitchOutputFbo.end();
+    
+    // グリッチエフェクトを適用
+    if (glitchAreaSystem.hasActiveGlitch()) {
+        ofFbo tempFbo;
+        tempFbo.allocate(ofGetWidth(), ofGetHeight(), GL_RGBA);
+        glitchAreaSystem.applyGlitch(glitchOutputFbo, tempFbo);
+        tempFbo.draw(0, 0);
+    } else {
+        glitchOutputFbo.draw(0, 0);
     }
     
     // UIを描画（フェードアウト付き）
@@ -112,7 +134,7 @@ void ofApp::drawUI(){
     ofDrawBitmapString("Intensity: " + ofToString(intensity, 2), 20, y);
     y += 15;
     
-    ofDrawBitmapString("Keys: Space=Next, 1-7=Direct System, H=UI, 0,8-9=MIDI Port", 20, y);
+    ofDrawBitmapString("Keys: Space=Next, 1-7=Direct System, H=UI, G=Glitch, 0,8-9=MIDI Port", 20, y);
     y += 15;
     
     // テンポ情報の表示
@@ -131,6 +153,16 @@ void ofApp::drawUI(){
         ofDrawBitmapString("Transitioning to: " + systemNames[nextSystemIndex] + " (" + ofToString(transitionProgress * 100, 1) + "%)", 20, y);
         y += 15;
     }
+    
+    // グリッチシステム情報
+    if (glitchAreaSystem.hasActiveGlitch()) {
+        ofSetColor(255, 100, 100, uiFadeAlpha);
+        ofDrawBitmapString("GLITCH ACTIVE: " + ofToString(glitchAreaSystem.getActiveAreaCount()) + " areas", 20, y);
+        ofSetColor(255, uiFadeAlpha);
+    } else {
+        ofDrawBitmapString("Glitch: Ready (Push2 pads 92-99)", 20, y);
+    }
+    y += 15;
     
     ofDrawBitmapString("Channels 1-3: Switch Systems", 20, y);
     y += 20;
@@ -208,6 +240,16 @@ void ofApp::newMidiMessage(ofxMidiMessage& msg){
             system->onMidiMessage(msg);
         }
     }
+    
+    // Push2からのグリッチトリガー
+    if (msg.status == MIDI_NOTE_ON && msg.velocity > 0) {
+        // Push2のパッド（36-99）の特定のノートでグリッチトリガー
+        // 例: 上段のパッド（92-99）をグリッチトリガーに使用
+        if (msg.pitch >= 92 && msg.pitch <= 99) {
+            glitchAreaSystem.triggerGlitch(ofRandom(2, 4)); // 2-3個のランダムエリア
+            cout << "Glitch triggered from Push2 pad: " << msg.pitch << endl;
+        }
+    }
 }
 
 void ofApp::keyPressed(int key){
@@ -254,6 +296,10 @@ void ofApp::keyPressed(int key){
         } else {
             cout << "No MIDI ports available" << endl;
         }
+    } else if (key == 'g' || key == 'G') {
+        // グリッチエフェクトのトリガー（テスト用）
+        cout << "Triggering glitch effect" << endl;
+        glitchAreaSystem.triggerGlitch(ofRandom(2, 4));
     }
 }
 
@@ -391,6 +437,15 @@ void ofApp::mousePressed(int x, int y, int button){}
 void ofApp::mouseReleased(int x, int y, int button){}
 void ofApp::mouseEntered(int x, int y){}
 void ofApp::mouseExited(int x, int y){}
-void ofApp::windowResized(int w, int h){}
+void ofApp::windowResized(int w, int h){
+    // グリッチシステムのFBOをリサイズ
+    glitchAreaSystem.setup(w, h);
+    glitchOutputFbo.allocate(w, h, GL_RGBA);
+    
+    // 各ビジュアルシステムのリサイズ処理（必要に応じて）
+    for (auto& system : visualSystems) {
+        // システムがリサイズ対応している場合はここで処理
+    }
+}
 void ofApp::dragEvent(ofDragInfo dragInfo){}
 void ofApp::gotMessage(ofMessage msg){}

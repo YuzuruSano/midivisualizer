@@ -11,6 +11,7 @@
 #include "LSystemSystem.h"
 #include "DifferentialGrowthSystem.h"
 #include "ReactionDiffusionSystem.h"
+#include "GlitchAreaSystem.h"
 #include <memory>
 
 class ofApp : public ofBaseApp, public ofxMidiListener {
@@ -77,4 +78,12 @@ public:
     bool showUI = true;
     float uiFadeAlpha = 255;
     float lastActivityTime = 0;
+    
+    // グリッチシステム
+    GlitchAreaSystem glitchAreaSystem;
+    ofFbo glitchOutputFbo;
+    
+    // Push2 MIDI設定（グリッチトリガー用）
+    const int PUSH2_NOTE_OFFSET = 36;  // Push2のノート開始位置
+    const int PUSH2_GLITCH_TRIGGER_NOTE = 48;  // グリッチトリガー用のノート番号（例）
 };
