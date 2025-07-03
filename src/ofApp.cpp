@@ -19,8 +19,12 @@ void ofApp::setup(){
     visualSystems.push_back(std::make_unique<WaveSystem>());
     visualSystems.push_back(std::make_unique<FlowFieldSystem>());
     visualSystems.push_back(std::make_unique<LSystemSystem>());
-    visualSystems.push_back(std::make_unique<DifferentialGrowthSystem>());
-    visualSystems.push_back(std::make_unique<ReactionDiffusionSystem>());
+    visualSystems.push_back(std::make_unique<PerlinFlowSystem>());
+    visualSystems.push_back(std::make_unique<CurlNoiseSystem>());
+    visualSystems.push_back(std::make_unique<InfiniteCorridorSystem>());
+    visualSystems.push_back(std::make_unique<BuildingPerspectiveSystem>());
+    visualSystems.push_back(std::make_unique<WaterRippleSystem>());
+    visualSystems.push_back(std::make_unique<SandParticleSystem>());
     
     for (auto& system : visualSystems) {
         system->setup();
@@ -31,7 +35,7 @@ void ofApp::setup(){
         visualSystems[currentSystemIndex]->setActive(true);
     }
     
-    // グリッチシステムの初期化
+    // グリッチシステムの初期化（高品質）
     glitchAreaSystem.setup(ofGetWidth(), ofGetHeight());
     glitchOutputFbo.allocate(ofGetWidth(), ofGetHeight(), GL_RGBA32F_ARB);
     
@@ -91,10 +95,10 @@ void ofApp::draw(){
     }
     glitchOutputFbo.end();
     
-    // グリッチエフェクトを適用
-    if (glitchAreaSystem.hasActiveGlitch()) {
+    // グリッチエフェクトを適用（モノトーンシステムでは無効）
+    if (glitchAreaSystem.hasActiveGlitch() && currentSystemIndex < 7) {
         ofFbo tempFbo;
-        tempFbo.allocate(ofGetWidth(), ofGetHeight(), GL_RGBA);
+        tempFbo.allocate(ofGetWidth(), ofGetHeight(), GL_RGBA32F_ARB);
         glitchAreaSystem.applyGlitch(glitchOutputFbo, tempFbo);
         tempFbo.draw(0, 0);
     } else {
@@ -121,7 +125,7 @@ void ofApp::drawUI(){
     ofDrawBitmapString("MIDI Generative Art Visualizer", 20, y);
     y += 20;
     
-    string systemNames[] = {"Particles", "Fractals", "Waves", "Flow Field", "L-System", "Differential Growth", "Reaction-Diffusion"};
+    string systemNames[] = {"Particles", "Fractals", "Waves", "Flow Field", "L-System", "Perlin Flow", "Curl Noise", "Infinite Corridor", "Building Perspective", "Water Ripple", "Sand Particle"};
     ofDrawBitmapString("System [" + ofToString(currentSystemIndex + 1) + "/" + ofToString(visualSystems.size()) + "]: " + systemNames[currentSystemIndex], 20, y);
     y += 15;
     
@@ -149,13 +153,17 @@ void ofApp::drawUI(){
     
     // トランジション情報
     if (isTransitioning) {
-        string systemNames[] = {"Particles", "Fractals", "Waves", "Flow Field", "L-System", "Differential Growth", "Reaction-Diffusion"};
+        string systemNames[] = {"Particles", "Fractals", "Waves", "Flow Field", "L-System", "Perlin Flow", "Curl Noise", "Infinite Corridor", "Building Perspective", "Water Ripple", "Sand Particle"};
         ofDrawBitmapString("Transitioning to: " + systemNames[nextSystemIndex] + " (" + ofToString(transitionProgress * 100, 1) + "%)", 20, y);
         y += 15;
     }
     
     // グリッチシステム情報
-    if (glitchAreaSystem.hasActiveGlitch()) {
+    if (currentSystemIndex >= 7) {
+        ofSetColor(150, 150, 150, uiFadeAlpha);
+        ofDrawBitmapString("Glitch: Disabled (Monotone Systems)", 20, y);
+        ofSetColor(255, uiFadeAlpha);
+    } else if (glitchAreaSystem.hasActiveGlitch()) {
         ofSetColor(255, 100, 100, uiFadeAlpha);
         ofDrawBitmapString("GLITCH ACTIVE: " + ofToString(glitchAreaSystem.getActiveAreaCount()) + " areas", 20, y);
         ofSetColor(255, uiFadeAlpha);
@@ -246,8 +254,18 @@ void ofApp::newMidiMessage(ofxMidiMessage& msg){
         // Push2のパッド（36-99）の特定のノートでグリッチトリガー
         // 例: 上段のパッド（92-99）をグリッチトリガーに使用
         if (msg.pitch >= 92 && msg.pitch <= 99) {
-            glitchAreaSystem.triggerGlitch(ofRandom(2, 4)); // 2-3個のランダムエリア
-            cout << "Glitch triggered from Push2 pad: " << msg.pitch << endl;
+            // モノトーンシステムではグリッチを無効化
+            if (currentSystemIndex >= 7) {
+                cout << "Glitch disabled for monotone systems (System " << (currentSystemIndex + 1) << ")" << endl;
+                return;
+            }
+            
+            float currentTime = ofGetElapsedTimef();
+            if (currentTime - lastGlitchTime >= glitchCooldown) {
+                glitchAreaSystem.triggerGlitch(ofRandom(2, 4)); // 2-4個のエリアに拡大
+                lastGlitchTime = currentTime;
+                cout << "Glitch triggered from Push2 pad: " << msg.pitch << endl;
+            }
         }
     }
 }
@@ -297,9 +315,20 @@ void ofApp::keyPressed(int key){
             cout << "No MIDI ports available" << endl;
         }
     } else if (key == 'g' || key == 'G') {
-        // グリッチエフェクトのトリガー（テスト用）
-        cout << "Triggering glitch effect" << endl;
-        glitchAreaSystem.triggerGlitch(ofRandom(2, 4));
+        // グリッチエフェクトのトリガー（モノトーンシステムでは無効）
+        if (currentSystemIndex >= 7) {
+            cout << "Glitch disabled for monotone systems (System " << (currentSystemIndex + 1) << ")" << endl;
+            return;
+        }
+        
+        float currentTime = ofGetElapsedTimef();
+        if (currentTime - lastGlitchTime >= glitchCooldown) {
+            cout << "Triggering glitch effect" << endl;
+            glitchAreaSystem.triggerGlitch(ofRandom(2, 4));  // 2-4個のエリアに拡大
+            lastGlitchTime = currentTime;
+        } else {
+            cout << "Glitch cooldown active, ignoring trigger" << endl;
+        }
     }
 }
 
@@ -440,7 +469,7 @@ void ofApp::mouseExited(int x, int y){}
 void ofApp::windowResized(int w, int h){
     // グリッチシステムのFBOをリサイズ
     glitchAreaSystem.setup(w, h);
-    glitchOutputFbo.allocate(w, h, GL_RGBA);
+    glitchOutputFbo.allocate(w, h, GL_RGBA32F_ARB);
     
     // 各ビジュアルシステムのリサイズ処理（必要に応じて）
     for (auto& system : visualSystems) {

@@ -9,8 +9,12 @@
 #include "WaveSystem.h"
 #include "FlowFieldSystem.h"
 #include "LSystemSystem.h"
-#include "DifferentialGrowthSystem.h"
-#include "ReactionDiffusionSystem.h"
+#include "PerlinFlowSystem.h"
+#include "CurlNoiseSystem.h"
+#include "InfiniteCorridorSystem.h"
+#include "BuildingPerspectiveSystem.h"
+#include "WaterRippleSystem.h"
+#include "SandParticleSystem.h"
 #include "GlitchAreaSystem.h"
 #include <memory>
 
@@ -82,6 +86,8 @@ public:
     // グリッチシステム
     GlitchAreaSystem glitchAreaSystem;
     ofFbo glitchOutputFbo;
+    float lastGlitchTime = 0.0f;
+    float glitchCooldown = 0.5f;  // 0.5秒のクールダウンに短縮
     
     // Push2 MIDI設定（グリッチトリガー用）
     const int PUSH2_NOTE_OFFSET = 36;  // Push2のノート開始位置

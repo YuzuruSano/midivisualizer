@@ -86,10 +86,10 @@ public:
         : position(x, y), targetPosition(x, y), startPosition(x, y), 
           width(w), height(h), rotation(0), lifetime(life), maxLifetime(life), 
           glitchType(type), intensity(1.0), shape(s), movementPattern(mp),
-          movementSpeed(ofRandom(20, 60)), baseMovementSpeed(ofRandom(20, 60)),
-          targetMovementSpeed(ofRandom(80, 200)), speedTransitionTime(0), speedTransitionDuration(ofRandom(1.0, 3.0)),
+          movementSpeed(ofRandom(40, 120)), baseMovementSpeed(ofRandom(40, 120)),
+          targetMovementSpeed(ofRandom(120, 300)), speedTransitionTime(0), speedTransitionDuration(ofRandom(2.0, 5.0)),
           easingProgress(0), orbitRadius(ofRandom(50, 150)), orbitAngle(0), nextTargetTime(ofRandom(0.5, 2.0)),
-          accelerationPhase(0), pauseTimer(0), pauseDuration(ofRandom(0.5, 2.0)), isPaused(false), intensityMultiplier(1.0),
+          accelerationPhase(0), pauseTimer(0), pauseDuration(ofRandom(0.3, 1.5)), isPaused(false), intensityMultiplier(1.0),
           trailInterval(0.05f), lastTrailTime(0), trailMaxAge(3.0f), maxTrailPoints(60) {
         
         // 初期移動方向
@@ -370,7 +370,7 @@ private:
     int width, height;
     bool isInitialized;
     
-    // グリッチタイプ定義
+    // グリッチタイプ定義（Color remap FXs除外）
     enum GlitchType {
         CONVERGENCE = 0,
         SHAKE,
@@ -381,13 +381,6 @@ private:
         SLITSCAN,
         SWELL,
         INVERT,
-        HIGH_CONTRAST,
-        BLUE_RAISE,
-        RED_RAISE,
-        GREEN_RAISE,
-        BLUE_INVERT,
-        RED_INVERT,
-        GREEN_INVERT,
         NUM_GLITCH_TYPES
     };
     
@@ -398,16 +391,16 @@ public:
         width = w;
         height = h;
         
-        // FBO初期化（ステンシルバッファ付き）
+        // FBO初期化（高品質：32ビットFloatRGBA）
         ofFbo::Settings settings;
         settings.width = width;
         settings.height = height;
-        settings.internalformat = GL_RGBA32F_ARB;
-        settings.useDepth = true;
-        settings.useStencil = true;
+        settings.internalformat = GL_RGBA32F_ARB;  // 高品質な32F_ARBを復活
+        settings.useDepth = true;  // 深度バッファを有効化
+        settings.useStencil = true;  // ステンシルバッファも有効化
         
         glitchFbo.allocate(settings);
-        areaMaskFbo.allocate(width, height, GL_RGBA32F_ARB);
+        areaMaskFbo.allocate(width, height, GL_RGBA32F_ARB);  // 高品質化
         
         // ofxPostGlitch設定
         postGlitch.setup(&glitchFbo);
@@ -415,21 +408,21 @@ public:
         isInitialized = true;
     }
     
-    void triggerGlitch(int numAreas = 2) {
+    void triggerGlitch(int numAreas = 1) {
         if (!isInitialized) return;
         
         // 既存のエリアをクリア（オプション：重複を許可する場合はコメントアウト）
         areas.clear();
         
-        // ランダムに2-3個のエリアを生成
-        int actualNumAreas = ofRandom(2, 4); // 2-3個
+        // 複数エリアを許可（2-4個）
+        int actualNumAreas = ofClamp(numAreas, 1, 4); // 最大4個に拡大
         
         for (int i = 0; i < actualNumAreas; i++) {
             float x = ofRandom(width * 0.1, width * 0.9);
             float y = ofRandom(height * 0.1, height * 0.9);
-            float w = ofRandom(150, 350); // エリアの幅（大きめに）
-            float h = ofRandom(150, 350); // エリアの高さ（大きめに）
-            float lifetime = ofRandom(8.0, 15.0); // 8-15秒のライフタイム（大幅延長）
+            float w = ofRandom(150, 350); // エリアサイズを大幅拡大
+            float h = ofRandom(150, 350); // エリアサイズを大幅拡大
+            float lifetime = ofRandom(8.0, 15.0); // 持続時間を大幅延長
             int glitchType = (int)ofRandom(NUM_GLITCH_TYPES);
             
             // ランダムに形状と移動パターンを選択
@@ -526,13 +519,6 @@ private:
         postGlitch.setFx(OFXPOSTGLITCH_SLITSCAN, false);
         postGlitch.setFx(OFXPOSTGLITCH_SWELL, false);
         postGlitch.setFx(OFXPOSTGLITCH_INVERT, false);
-        postGlitch.setFx(OFXPOSTGLITCH_CR_HIGHCONTRAST, false);
-        postGlitch.setFx(OFXPOSTGLITCH_CR_BLUERAISE, false);
-        postGlitch.setFx(OFXPOSTGLITCH_CR_REDRAISE, false);
-        postGlitch.setFx(OFXPOSTGLITCH_CR_GREENRAISE, false);
-        postGlitch.setFx(OFXPOSTGLITCH_CR_BLUEINVERT, false);
-        postGlitch.setFx(OFXPOSTGLITCH_CR_REDINVERT, false);
-        postGlitch.setFx(OFXPOSTGLITCH_CR_GREENINVERT, false);
         
         // 選択されたグリッチタイプを適用
         switch (area.glitchType) {
@@ -562,27 +548,6 @@ private:
                 break;
             case INVERT:
                 postGlitch.setFx(OFXPOSTGLITCH_INVERT, true);
-                break;
-            case HIGH_CONTRAST:
-                postGlitch.setFx(OFXPOSTGLITCH_CR_HIGHCONTRAST, true);
-                break;
-            case BLUE_RAISE:
-                postGlitch.setFx(OFXPOSTGLITCH_CR_BLUERAISE, true);
-                break;
-            case RED_RAISE:
-                postGlitch.setFx(OFXPOSTGLITCH_CR_REDRAISE, true);
-                break;
-            case GREEN_RAISE:
-                postGlitch.setFx(OFXPOSTGLITCH_CR_GREENRAISE, true);
-                break;
-            case BLUE_INVERT:
-                postGlitch.setFx(OFXPOSTGLITCH_CR_BLUEINVERT, true);
-                break;
-            case RED_INVERT:
-                postGlitch.setFx(OFXPOSTGLITCH_CR_REDINVERT, true);
-                break;
-            case GREEN_INVERT:
-                postGlitch.setFx(OFXPOSTGLITCH_CR_GREENINVERT, true);
                 break;
         }
         
