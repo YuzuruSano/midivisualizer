@@ -18,6 +18,25 @@
 #include "GlitchAreaSystem.h"
 #include <memory>
 
+// 前方宣言
+class ofApp;
+
+// カスタムMIDIリスナー（ドラム用）
+class DrumMidiListener : public ofxMidiListener {
+    ofApp* app;
+public:
+    DrumMidiListener(ofApp* a) : app(a) {}
+    void newMidiMessage(ofxMidiMessage& msg) override;
+};
+
+// カスタムMIDIリスナー（Push2用）
+class Push2MidiListener : public ofxMidiListener {
+    ofApp* app;
+public:
+    Push2MidiListener(ofApp* a) : app(a) {}
+    void newMidiMessage(ofxMidiMessage& msg) override;
+};
+
 class ofApp : public ofBaseApp, public ofxMidiListener {
 public:
     void setup();
@@ -37,7 +56,9 @@ public:
     void dragEvent(ofDragInfo dragInfo);
     void gotMessage(ofMessage msg);
     
-    void newMidiMessage(ofxMidiMessage& eventArgs);
+    void newMidiMessage(ofxMidiMessage& eventArgs);  // デフォルトMIDIコールバック
+    void onDrumMidiMessage(ofxMidiMessage& msg);     // ドラムMIDI処理
+    void onPush2MidiMessage(ofxMidiMessage& msg);    // Push2 MIDI処理
     void drawUI();
     void switchToSystem(int systemIndex);
     void startTransition(int targetSystemIndex);
@@ -48,9 +69,21 @@ public:
     bool shouldAutoSwitch();
     void handleAutoSwitch();
     
-    ofxMidiIn midiIn;
+    // 複数MIDI入力（同時受信）
+    ofxMidiIn midiInDrums;    // IAC ドライバー用（ドラムMIDI）
+    ofxMidiIn midiInPush2;    // Push2用（グリッチトリガー）
     std::vector<ofxMidiMessage> midiMessages;
     std::size_t maxMessages = 10;
+    
+    // カスタムMIDIリスナー
+    std::unique_ptr<DrumMidiListener> drumListener;
+    std::unique_ptr<Push2MidiListener> push2Listener;
+    
+    // MIDI接続状況
+    bool drumMidiConnected = false;
+    bool push2MidiConnected = false;
+    string drumPortName = "";
+    string push2PortName = "";
     
     // ビジュアルシステム
     std::vector<std::unique_ptr<VisualSystem>> visualSystems;
@@ -83,11 +116,20 @@ public:
     float uiFadeAlpha = 255;
     float lastActivityTime = 0;
     
+    // カラーモード管理
+    bool isMonochromePattern = false;  // 現在のパターンがモノクロかどうか
+    int patternCount = 0;              // パターンの通し番号
+    
+    // システムの再生順序マッピング
+    std::vector<int> playbackOrder;     // 実際の再生順序
+    int playbackIndex = 0;             // 現在の再生位置
+    
     // グリッチシステム
     GlitchAreaSystem glitchAreaSystem;
     ofFbo glitchOutputFbo;
     float lastGlitchTime = 0.0f;
-    float glitchCooldown = 0.5f;  // 0.5秒のクールダウンに短縮
+    float glitchCooldown = 2.0f;  // 2.0秒のクールダウンに拡大（安全性最優先）
+    bool glitchSystemBusy = false;  // グリッチシステムのビジー状態
     
     // Push2 MIDI設定（グリッチトリガー用）
     const int PUSH2_NOTE_OFFSET = 36;  // Push2のノート開始位置

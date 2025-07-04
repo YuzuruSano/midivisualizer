@@ -24,6 +24,16 @@ struct BuildingFace {
     BuildingFace() : faceColor(80, 80, 80), alpha(255.0f), isFloor(false), windowDensity(0.0f) {}
 };
 
+// 建物の成長タイプ
+enum BuildingGrowthType {
+    FOUNDATION,     // 基礎段階
+    LOW_RISE,       // 低層階
+    MID_RISE,       // 中層階
+    HIGH_RISE,      // 高層階
+    SKYSCRAPER,     // 超高層
+    COMPLEX         // 複合建物
+};
+
 struct Building {
     std::vector<BuildingFace> faces;
     std::vector<BuildingEdge> edges;
@@ -34,8 +44,25 @@ struct Building {
     bool isActive;
     float spawnTime;
     
+    // 成長システム
+    BuildingGrowthType growthType;
+    int growthLevel;        // 0-5の成長レベル
+    float growthProgress;   // 0.0-1.0の成長進行度
+    float age;              // 建物の年齢
+    std::vector<Building*> children;  // 派生した子建物
+    Building* parent;       // 親建物
+    
+    // 成長パラメータ
+    float growthRate;       // 成長速度
+    float maxHeight;        // 最大高さ
+    float spawnProbability; // 派生確率
+    bool canSpawnChildren;  // 子建物を生成できるか
+    
     Building() : position(0, 0, 0), size(100, 100, 100), rotationY(0.0f), 
-                depth(0.0f), isActive(true), spawnTime(0.0f) {}
+                depth(0.0f), isActive(true), spawnTime(0.0f),
+                growthType(FOUNDATION), growthLevel(0), growthProgress(0.0f), age(0.0f),
+                parent(nullptr), growthRate(1.0f), maxHeight(200.0f),
+                spawnProbability(0.1f), canSpawnChildren(true) {}
 };
 
 class BuildingPerspectiveSystem : public VisualSystem {
@@ -73,6 +100,12 @@ private:
     float ambientLight;
     float shadowIntensity;
     
+    // 成長システムパラメータ
+    float globalGrowthRate;      // 全体成長速度
+    float spawnCooldown;         // 派生クールダウン
+    float lastSpawnTime;         // 最後の派生時刻
+    int maxBuildingsPerArea;     // エリア当たりの最大建物数
+    
     // MIDI連動
     float kickIntensity;
     float snareIntensity;
@@ -89,6 +122,15 @@ private:
     void projectPoint(const ofVec3f& point3D, ofVec2f& point2D);
     void createBuildingGeometry(Building& building);
     void cleanupDistantBuildings();
+    
+    // 成長システム
+    void updateBuildingGrowth(Building& building, float deltaTime);
+    void spawnChildBuilding(Building& parent);
+    void growBuilding(Building& building, float deltaTime);
+    BuildingGrowthType getNextGrowthType(BuildingGrowthType current);
+    void updateBuildingType(Building& building);
+    ofColor getBuildingColorByType(BuildingGrowthType type, int level);
+    void generateBuildingByType(Building& building, BuildingGrowthType type);
     
 public:
     BuildingPerspectiveSystem();

@@ -66,6 +66,10 @@ protected:
     float systemTime = 0.0f;               // システム内時間
     float lastMidiTime = 0.0f;             // 最後のMIDI入力時間
     
+    // === カラーモード管理 ===
+    bool isMonochromeMode = false;         // モノクロモードフラグ
+    static bool globalMonochromeMode;       // 全システム共通のモノクロモード
+    
     // ドラムタイプの識別（General MIDI準拠）
     enum DrumType {
         KICK = 36,      // Bass Drum
@@ -458,94 +462,113 @@ protected:
     
     // === 強化された都市カラーシステム ===
     ofColor urbanColor(int note, float intensity = 1.0f) {
-        // 基本のコンクリート色
-        float base = ofMap(note % 12, 0, 12, 15, 70);
-        float brightness = base + intensity * 80; // より強いコントラスト
-        
-        // 成長レベルによる色調変化
-        brightness += globalGrowthLevel * 40;
-        
-        // 崩壊時の色調変化
-        if (isCollapsing) {
-            brightness *= 0.7f; // 暗く
+        if (globalMonochromeMode) {
+            // モノクロモード: 純粋なグレースケール
+            float base = ofMap(note % 12, 0, 12, 30, 120);
+            float brightness = base + intensity * 60;
+            brightness += globalGrowthLevel * 30;
+            
+            if (isCollapsing) {
+                brightness *= 0.7f;
+            }
+            
+            brightness = ofClamp(brightness, 0, 255);
+            return ofColor(brightness, brightness, brightness);
+        } else {
+            // カラーモード: 既存の都市カラー
+            float base = ofMap(note % 12, 0, 12, 15, 70);
+            float brightness = base + intensity * 80;
+            brightness += globalGrowthLevel * 40;
+            
+            if (isCollapsing) {
+                brightness *= 0.7f;
+            }
+            
+            ofColor color;
+            color.r = brightness * 0.92f;
+            color.g = brightness * 0.95f;
+            color.b = brightness * 1.08f;
+            
+            color.setHue(color.getHue() + globalHueShift);
+            color.setSaturation(color.getSaturation() * saturationBoost);
+            
+            return color;
         }
-        
-        // わずかに青みがかったグレー（都市の夜）
-        ofColor color;
-        color.r = brightness * 0.92f;
-        color.g = brightness * 0.95f;
-        color.b = brightness * 1.08f;
-        
-        // グローバル色相シフトの適用
-        color.setHue(color.getHue() + globalHueShift);
-        color.setSaturation(color.getSaturation() * saturationBoost);
-        
-        return color;
     }
     
     // 都市的アクセントカラー（大幅強化）
     ofColor accentColor(float intensity = 1.0f) {
-        static std::vector<ofVec3f> urbanAccents = {
-            ofVec3f(255, 85, 0),    // 交通コーン・オレンジ
-            ofVec3f(0, 255, 255),   // 蛍光ブルー（地下鉄）
-            ofVec3f(255, 255, 0),   // 工事現場・イエロー
-            ofVec3f(255, 20, 147),  // ネオンピンク
-            ofVec3f(50, 205, 50),   // 緊急出口・グリーン
-            ofVec3f(255, 69, 0),    // 危険・レッド
-            ofVec3f(138, 43, 226),  // 電気・パープル
-            ofVec3f(255, 140, 0),   // 街灯・アンバー
-        };
-        
-        static int lastIndex = 0;
-        if (intensity > 0.7f || impactIntensity > 0.8f) {
-            lastIndex = ofRandom(urbanAccents.size());
+        if (globalMonochromeMode) {
+            // モノクロモード: 白〜グレーのアクセント
+            float brightness = 150 + intensity * 105;
+            brightness = ofClamp(brightness, 0, 255);
+            return ofColor(brightness, brightness, brightness);
+        } else {
+            // カラーモード: 既存のアクセントカラー
+            static std::vector<ofVec3f> urbanAccents = {
+                ofVec3f(255, 85, 0),    // 交通コーン・オレンジ
+                ofVec3f(0, 255, 255),   // 蛍光ブルー（地下鉄）
+                ofVec3f(255, 255, 0),   // 工事現場・イエロー
+                ofVec3f(255, 20, 147),  // ネオンピンク
+                ofVec3f(50, 205, 50),   // 緊急出口・グリーン
+                ofVec3f(255, 69, 0),    // 危険・レッド
+                ofVec3f(138, 43, 226),  // 電気・パープル
+                ofVec3f(255, 140, 0),   // 街灯・アンバー
+            };
+            
+            static int lastIndex = 0;
+            if (intensity > 0.7f || impactIntensity > 0.8f) {
+                lastIndex = ofRandom(urbanAccents.size());
+            }
+            
+            ofVec3f accent = urbanAccents[lastIndex];
+            ofColor color;
+            
+            float boostFactor = 1.0f + globalGrowthLevel * 0.5f + impactIntensity * 0.8f;
+            color.r = accent.x * intensity * boostFactor;
+            color.g = accent.y * intensity * boostFactor;
+            color.b = accent.z * intensity * boostFactor;
+            
+            color.setHue(color.getHue() + globalHueShift);
+            color.setSaturation(color.getSaturation() * saturationBoost);
+            
+            return color;
         }
-        
-        ofVec3f accent = urbanAccents[lastIndex];
-        ofColor color;
-        
-        // より強烈な色彩
-        float boostFactor = 1.0f + globalGrowthLevel * 0.5f + impactIntensity * 0.8f;
-        color.r = accent.x * intensity * boostFactor;
-        color.g = accent.y * intensity * boostFactor;
-        color.b = accent.z * intensity * boostFactor;
-        
-        // グローバル効果の適用
-        color.setHue(color.getHue() + globalHueShift);
-        color.setSaturation(color.getSaturation() * saturationBoost);
-        
-        return color;
     }
     
     // 深度ベースの都市カラー（強化版）
     ofColor depthUrbanColor(int note, float depth, float intensity = 1.0f) {
-        // より強いコントラスト
-        float baseTemp = ofMap(depth, 0, 1, 80, 15); // 暖色→寒色
+        float baseTemp = ofMap(depth, 0, 1, 80, 15);
         float variance = ofMap(note % 12, 0, 12, -20, 20);
+        float brightness = baseTemp + variance + intensity * 60;
+        brightness += globalGrowthLevel * 30;
         
-        float brightness = baseTemp + variance + intensity * 60; // より明るく
-        brightness += globalGrowthLevel * 30; // 成長による明度変化
-        
-        ofColor color;
-        if (depth < 0.3f) { // 前景：暖色系（錆、汚れ）
-            color.r = brightness * 1.3f;
-            color.g = brightness * 0.7f;
-            color.b = brightness * 0.4f;
-        } else if (depth < 0.7f) { // 中景：ニュートラル
-            color.r = brightness * 0.8f;
-            color.g = brightness;
-            color.b = brightness * 1.1f;
-        } else { // 背景：寒色系（遠い建物）
-            color.r = brightness * 0.5f;
-            color.g = brightness * 0.8f;
-            color.b = brightness * 1.4f;
+        if (globalMonochromeMode) {
+            // モノクロモード: 深度による明度変化のみ
+            brightness = ofClamp(brightness, 0, 255);
+            return ofColor(brightness, brightness, brightness);
+        } else {
+            // カラーモード: 既存の深度カラー
+            ofColor color;
+            if (depth < 0.3f) {
+                color.r = brightness * 1.3f;
+                color.g = brightness * 0.7f;
+                color.b = brightness * 0.4f;
+            } else if (depth < 0.7f) {
+                color.r = brightness * 0.8f;
+                color.g = brightness;
+                color.b = brightness * 1.1f;
+            } else {
+                color.r = brightness * 0.5f;
+                color.g = brightness * 0.8f;
+                color.b = brightness * 1.4f;
+            }
+            
+            color.setHue(color.getHue() + globalHueShift);
+            color.setSaturation(color.getSaturation() * saturationBoost);
+            
+            return color;
         }
-        
-        // グローバル効果の適用
-        color.setHue(color.getHue() + globalHueShift);
-        color.setSaturation(color.getSaturation() * saturationBoost);
-        
-        return color;
     }
     
     // === 状態取得関数 ===
@@ -553,4 +576,9 @@ protected:
     bool getIsCollapsing() const { return isCollapsing; }
     float getSystemTime() const { return systemTime; }
     float getTimeSinceLastMidi() const { return systemTime - lastMidiTime; }
+    
+public:
+    // カラーモード管理（publicに変更）
+    static void setGlobalMonochromeMode(bool mono) { globalMonochromeMode = mono; }
+    static bool getGlobalMonochromeMode() { return globalMonochromeMode; }
 };

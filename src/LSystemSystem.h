@@ -192,9 +192,16 @@ public:
         // 構造物の更新
         updateStructures(deltaTime);
         
-        // プロシージャル建設（密度制限を大幅削減）
-        if (constructionProgress > 0.5f && structures.size() < 150) {
+        // プロシージャル建設（密度制限を緩和、生成タイミングを早める）
+        if (constructionProgress > 0.2f && structures.size() < 250) {
             proceduralConstruction();
+        }
+        
+        // 建物が少なすぎる場合は追加で生成
+        if (structures.size() < 50 && globalGrowthLevel > 0.3f) {
+            for (int i = 0; i < 3; i++) {
+                proceduralConstruction();
+            }
         }
         
         // 建設強度の減衰
@@ -731,12 +738,22 @@ private:
             }
         }
         
-        // 不安定な構造の除去
+        // 不安定な構造の除去（より厳格に）
         structures.erase(
             std::remove_if(structures.begin(), structures.end(),
-                [](const UrbanStructure& s) { return s.stability < 0.1f; }),
+                [](const UrbanStructure& s) { return s.stability < 0.05f || s.age > 30.0f; }),
             structures.end()
         );
+        
+        // 最小建物数の維持
+        if (structures.size() < 20 && globalGrowthLevel > 0.2f) {
+            // 緊急建設
+            for (int i = 0; i < 5; i++) {
+                ofVec2f emergencyPos(ofRandom(100, ofGetWidth()-100), 
+                                    ofRandom(100, ofGetHeight()-100));
+                createStructuralElement(emergencyPos, 0.5f + globalGrowthLevel * 0.5f);
+            }
+        }
     }
     
     void createFoundation(ofVec2f position) {
@@ -780,10 +797,27 @@ private:
     }
     
     void proceduralConstruction() {
-        if (ofRandom(1.0f) < 0.02f * globalGrowthLevel) {
+        // 建物生成確率を大幅に増加（0.02f→0.15f）
+        if (ofRandom(1.0f) < 0.15f * globalGrowthLevel) {
             // 新しい構造要素の自動生成
             ofVec2f newPos(ofRandom(100, ofGetWidth()-100), ofRandom(100, ofGetHeight()-100));
             createStructuralElement(newPos, globalGrowthLevel);
+        }
+        
+        // さらに、既存の建物周辺に追加の建物を生成（都市的な成長）
+        if (structures.size() > 10 && ofRandom(1.0f) < 0.1f * globalGrowthLevel) {
+            // 既存建物の近くに新しい建物を配置
+            int randomIndex = ofRandom(structures.size());
+            auto& existingStructure = structures[randomIndex];
+            
+            ofVec2f nearbyPos = existingStructure.position + 
+                ofVec2f(ofRandom(-50, 50), ofRandom(-50, 50));
+            
+            // 画面境界内に制限
+            nearbyPos.x = ofClamp(nearbyPos.x, 100, ofGetWidth()-100);
+            nearbyPos.y = ofClamp(nearbyPos.y, 100, ofGetHeight()-100);
+            
+            createStructuralElement(nearbyPos, globalGrowthLevel * 0.8f);
         }
     }
     

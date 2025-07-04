@@ -369,10 +369,12 @@ private:
     ofFbo areaMaskFbo;
     int width, height;
     bool isInitialized;
+    bool lightweightMode = false;  // 軽量モードを無効化（グリッチ効果優先）
     
-    // グリッチタイプ定義（Color remap FXs除外）
+    // グリッチタイプ定義（指定の10種類）
     enum GlitchType {
         CONVERGENCE = 0,
+        GLOW,
         SHAKE,
         CUT_SLIDER,
         TWIST,
@@ -411,31 +413,63 @@ public:
     void triggerGlitch(int numAreas = 1) {
         if (!isInitialized) return;
         
-        // 既存のエリアをクリア（オプション：重複を許可する場合はコメントアウト）
-        areas.clear();
+        // 軽量モード：非常に厳格な制限
+        int maxTotalAreas = lightweightMode ? 1 : 2; // 軽量モードでは1個のみ
+        int currentAreas = areas.size();
         
-        // 複数エリアを許可（2-4個）
-        int actualNumAreas = ofClamp(numAreas, 1, 4); // 最大4個に拡大
+        if (currentAreas >= maxTotalAreas) {
+            // 既に最大数に達している場合は何もしない
+            cout << "GlitchArea limit reached: " << currentAreas << "/" << maxTotalAreas << endl;
+            return;
+        }
+        
+        // 追加可能な数を計算（軽量モードでは常に1個）
+        int actualNumAreas = lightweightMode ? 1 : ofClamp(numAreas, 1, maxTotalAreas - currentAreas);
         
         for (int i = 0; i < actualNumAreas; i++) {
-            float x = ofRandom(width * 0.1, width * 0.9);
-            float y = ofRandom(height * 0.1, height * 0.9);
-            float w = ofRandom(150, 350); // エリアサイズを大幅拡大
-            float h = ofRandom(150, 350); // エリアサイズを大幅拡大
-            float lifetime = ofRandom(8.0, 15.0); // 持続時間を大幅延長
-            int glitchType = (int)ofRandom(NUM_GLITCH_TYPES);
+            float x = ofRandom(width * 0.2, width * 0.8);
+            float y = ofRandom(height * 0.2, height * 0.8);
             
-            // ランダムに形状と移動パターンを選択
-            GlitchAreaShape shape = (GlitchAreaShape)(int)ofRandom(NUM_SHAPES);
-            MovementPattern movement = (MovementPattern)(int)ofRandom(NUM_MOVEMENT_PATTERNS);
+            // 軽量モード：小さめのエリア、短い持続時間
+            float w, h, lifetime;
+            int glitchType;
+            GlitchAreaShape shape;
+            MovementPattern movement;
             
-            // サーチライト風の動きを重み付けして選択
-            if (ofRandom(1.0) < 0.7) { // 70%の確率でサーチライト風
-                movement = SPOTLIGHT_SCAN;
-            } else if (ofRandom(1.0) < 0.2) { // 20%の確率でランダムウォーク
-                movement = RANDOM_WALK;
-            } else if (ofRandom(1.0) < 0.1) { // 10%の確率で直線移動
-                movement = LINEAR_SWEEP;
+            if (lightweightMode) {
+                w = ofRandom(150, 350); // 元のサイズを維持
+                h = ofRandom(150, 350); // 元のサイズを維持
+                lifetime = ofRandom(8.0, 15.0); // 元の持続時間を維持
+                glitchType = (int)ofRandom(NUM_GLITCH_TYPES); // 全10種類を使用
+                shape = CIRCLE; // 単純な円のみ（要望通り）
+                
+                // サーチライト風の動きを重み付けして選択（移動を復活）
+                if (ofRandom(1.0) < 0.7) {
+                    movement = SPOTLIGHT_SCAN;
+                } else if (ofRandom(1.0) < 0.2) {
+                    movement = RANDOM_WALK;
+                } else if (ofRandom(1.0) < 0.1) {
+                    movement = LINEAR_SWEEP;
+                } else {
+                    movement = STATIC;
+                }
+            } else {
+                w = ofRandom(150, 350);
+                h = ofRandom(150, 350);
+                lifetime = ofRandom(8.0, 15.0);
+                glitchType = (int)ofRandom(NUM_GLITCH_TYPES);
+                shape = CIRCLE; // 全モードで円形に統一
+                
+                // サーチライト風の動きを重み付けして選択
+                if (ofRandom(1.0) < 0.7) {
+                    movement = SPOTLIGHT_SCAN;
+                } else if (ofRandom(1.0) < 0.2) {
+                    movement = RANDOM_WALK;
+                } else if (ofRandom(1.0) < 0.1) {
+                    movement = LINEAR_SWEEP;
+                } else {
+                    movement = STATIC;
+                }
             }
             
             areas.emplace_back(x, y, w, h, lifetime, glitchType, shape, movement);
@@ -467,6 +501,12 @@ public:
             return;
         }
         
+        // 安全性チェック: FBOの有効性を確認
+        if (!inputFbo.isAllocated() || !outputFbo.isAllocated() || !glitchFbo.isAllocated()) {
+            cout << "Warning: FBO not properly allocated" << endl;
+            return;
+        }
+        
         // 最終結果を出力FBOに描画
         outputFbo.begin();
         ofClear(0, 0, 0, 0);
@@ -476,23 +516,32 @@ public:
         
         // 各エリアにグリッチエフェクトを適用
         for (const auto& area : areas) {
-            // 入力をグリッチFBOにコピー
-            glitchFbo.begin();
-            ofClear(0, 0, 0, 0);
-            inputFbo.draw(0, 0);
-            glitchFbo.end();
-            
-            // このエリア用のグリッチエフェクトを設定
-            applyGlitchToArea(area);
-            
-            // グリッチを生成
-            postGlitch.generateFx();
-            
-            // トレイルを描画（現在位置より前に）
-            drawTrail(area);
-            
-            // グリッチエリアを円形マスクで描画
-            drawGlitchArea(area);
+            try {
+                // 入力をグリッチFBOにコピー
+                glitchFbo.begin();
+                ofClear(0, 0, 0, 0);
+                inputFbo.draw(0, 0);
+                glitchFbo.end();
+                
+                // このエリア用のグリッチエフェクトを設定
+                applyGlitchToArea(area);
+                
+                // グリッチを生成
+                postGlitch.generateFx();
+                
+                // トレイルを描画（現在位置より前に）
+                drawTrail(area);
+                
+                // グリッチエリアを円形マスクで描画
+                drawGlitchArea(area);
+            } catch (const std::exception& e) {
+                cout << "Error in glitch processing: " << e.what() << endl;
+                // エラーが発生した場合はそのエリアをスキップ
+                continue;
+            } catch (...) {
+                cout << "Unknown error in glitch processing" << endl;
+                continue;
+            }
         }
         
         outputFbo.end();
@@ -524,6 +573,9 @@ private:
         switch (area.glitchType) {
             case CONVERGENCE:
                 postGlitch.setFx(OFXPOSTGLITCH_CONVERGENCE, true);
+                break;
+            case GLOW:
+                postGlitch.setFx(OFXPOSTGLITCH_GLOW, true);
                 break;
             case SHAKE:
                 postGlitch.setFx(OFXPOSTGLITCH_SHAKER, true);
@@ -557,10 +609,56 @@ private:
         ofPushMatrix();
         ofPushStyle();
         
-        // ステンシルバッファを使用して形状マスクを作成
-        glEnable(GL_STENCIL_TEST);
-        glClearStencil(0);
-        glClear(GL_STENCIL_BUFFER_BIT);
+        // 軽量モード：シンプルな円形クリップ描画
+        if (lightweightMode) {
+            try {
+                ofEnableBlendMode(OF_BLENDMODE_ALPHA);
+                
+                // シンプルな方法：円形の部分だけグリッチFBOを表示
+                ofPushMatrix();
+                ofTranslate(area.position.x, area.position.y);
+                ofRotateDeg(area.rotation);
+                
+                // クリッピングマスクを設定
+                ofPushStyle();
+                ofSetCircleResolution(32);
+                
+                // 円形にクリップしてグリッチを描画
+                float radius = area.width / 2;
+                
+                // グリッチFBOから円形部分を切り取って描画
+                ofSetColor(255, 255 * area.getIntensity());
+                
+                // テクスチャ座標を計算
+                float texX = area.position.x - radius;
+                float texY = area.position.y - radius;
+                float texW = area.width;
+                float texH = area.height;
+                
+                // 円形マスクで描画（簡易版）
+                glitchFbo.getTexture().drawSubsection(
+                    -radius, -radius, texW, texH,
+                    texX, texY, texW, texH
+                );
+                
+                ofPopStyle();
+                ofPopMatrix();
+                ofDisableBlendMode();
+            } catch (...) {
+                cout << "Error in lightweight glitch draw" << endl;
+            }
+            
+            ofPopStyle();
+            ofPopMatrix();
+            return;
+        }
+        
+        // 従来のステンシルバッファモード（重い）
+        try {
+            // ステンシルバッファを使用して形状マスクを作成
+            glEnable(GL_STENCIL_TEST);
+            glClearStencil(0);
+            glClear(GL_STENCIL_BUFFER_BIT);
         
         // ステンシルバッファに形状を描画
         glStencilFunc(GL_ALWAYS, 1, 0xFF);
@@ -630,8 +728,17 @@ private:
         ofSetColor(255, 255 * area.getIntensity());
         glitchFbo.draw(0, 0);
         
-        // ステンシルテストを無効化
-        glDisable(GL_STENCIL_TEST);
+            // ステンシルテストを無効化
+            glDisable(GL_STENCIL_TEST);
+            
+        } catch (const std::exception& e) {
+            cout << "Error in drawGlitchArea: " << e.what() << endl;
+            // エラー時は必ずステンシルテストを無効化
+            glDisable(GL_STENCIL_TEST);
+        } catch (...) {
+            cout << "Unknown error in drawGlitchArea" << endl;
+            glDisable(GL_STENCIL_TEST);
+        }
         
         ofDisableBlendMode();
         ofPopStyle();
@@ -640,6 +747,32 @@ private:
     
     void drawTrail(const GlitchArea& area) {
         if (area.trail.empty()) return;
+        
+        // 軽量モード：簡易トレイル描画（円形のみ、ステンシルなし）
+        if (lightweightMode) {
+            try {
+                // 最新の5ポイントのみ描画（軽量化）
+                int startIdx = area.trail.size() > 5 ? area.trail.size() - 5 : 0;
+                
+                for (int i = startIdx; i < area.trail.size(); i++) {
+                    const TrailPoint& point = area.trail[i];
+                    if (point.intensity <= 0) continue;
+                    
+                    float trailAlpha = point.intensity * area.getIntensity() * 0.2f; // より薄く
+                    float trailSize = area.width * (0.3f + point.intensity * 0.7f);
+                    
+                    // 単純な円で描画
+                    ofSetColor(255, 255 * trailAlpha);
+                    ofDrawCircle(point.position.x, point.position.y, trailSize / 2);
+                }
+            } catch (...) {
+                cout << "Error in lightweight trail" << endl;
+            }
+            
+            ofDisableBlendMode();
+            ofPopStyle();
+            return;
+        }
         
         ofPushStyle();
         ofEnableBlendMode(OF_BLENDMODE_ALPHA);
@@ -654,10 +787,11 @@ private:
             float trailAlpha = point.intensity * area.getIntensity() * 0.3f; // 薄めに
             float trailSize = area.width * (0.3f + point.intensity * 0.7f); // サイズもフェード
             
-            // ステンシルバッファを使用してトレイル形状を描画
-            glEnable(GL_STENCIL_TEST);
-            glClearStencil(0);
-            glClear(GL_STENCIL_BUFFER_BIT);
+            try {
+                // ステンシルバッファを使用してトレイル形状を描画
+                glEnable(GL_STENCIL_TEST);
+                glClearStencil(0);
+                glClear(GL_STENCIL_BUFFER_BIT);
             
             // ステンシルバッファにトレイル形状を描画
             glStencilFunc(GL_ALWAYS, 1, 0xFF);
@@ -726,8 +860,16 @@ private:
             ofSetColor(255, 255 * trailAlpha);
             glitchFbo.draw(0, 0);
             
-            // ステンシルテストを無効化
-            glDisable(GL_STENCIL_TEST);
+                // ステンシルテストを無効化
+                glDisable(GL_STENCIL_TEST);
+                
+            } catch (const std::exception& e) {
+                cout << "Error in drawTrail: " << e.what() << endl;
+                glDisable(GL_STENCIL_TEST);
+            } catch (...) {
+                cout << "Unknown error in drawTrail" << endl;
+                glDisable(GL_STENCIL_TEST);
+            }
         }
         
         ofDisableBlendMode();

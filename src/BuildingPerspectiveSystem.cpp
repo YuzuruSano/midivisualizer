@@ -85,6 +85,13 @@ void BuildingPerspectiveSystem::update(float deltaTime) {
     buildingSpawnRate = 0.1f + globalGrowthLevel * 0.15f;
     cameraSpeed = 80.0f + globalGrowthLevel * 40.0f;
     buildingHeight = 150.0f + globalGrowthLevel * 100.0f;
+    globalGrowthRate = 1.0f + globalGrowthLevel * 2.0f;
+    
+    // 建物の成長更新
+    float currentTime = ofGetElapsedTimef();
+    for (auto& building : buildings) {
+        updateBuildingGrowth(building, deltaTime);
+    }
 }
 
 void BuildingPerspectiveSystem::draw() {
@@ -140,35 +147,47 @@ void BuildingPerspectiveSystem::draw() {
 void BuildingPerspectiveSystem::generateBuilding(float depth) {
     Building building;
     
+    // 初期成長タイプをFOUNDATIONに設定
+    building.growthType = FOUNDATION;
+    building.growthLevel = 0;
+    building.growthProgress = 0.0f;
+    building.age = 0.0f;
+    building.parent = nullptr;
+    building.growthRate = ofRandom(0.5f, 1.5f);
+    building.maxHeight = ofRandom(150.0f, 400.0f) + globalGrowthLevel * 200.0f;
+    building.spawnProbability = ofRandom(0.05f, 0.2f);
+    building.canSpawnChildren = true;
+    
     // より広範囲の建物配置
     float side = ofRandom(1.0f);
     if (side < 0.5f) {
         // 左側の建物
         building.position.set(
             ofRandom(-streetWidth * 2.0f, -streetWidth * 0.5f),
-            ofRandom(-20, 0),
+            0,  // 地面レベルに固定
             depth
         );
     } else {
         // 右側の建物
         building.position.set(
             ofRandom(streetWidth * 0.5f, streetWidth * 2.0f),
-            ofRandom(-20, 0),
+            0,  // 地面レベルに固定
             depth
         );
     }
     
+    // 初期サイズ（小さく始まる）
     building.size.set(
-        ofRandom(40, 120),
-        ofRandom(buildingHeight * 0.3f, buildingHeight * 2.0f),
-        ofRandom(60, 150)
+        ofRandom(40, 80),    // 幅を小さく
+        ofRandom(20, 50),    // 高さを低く
+        ofRandom(40, 80)     // 奥行きを小さく
     );
     
     building.rotationY = ofRandom(-15, 15);
     building.depth = depth - cameraPosition.z;
     building.spawnTime = ofGetElapsedTimef();
     
-    createBuildingGeometry(building);
+    generateBuildingByType(building, building.growthType);
     buildings.push_back(building);
 }
 
@@ -633,4 +652,178 @@ void BuildingPerspectiveSystem::setGlobalGrowthLevel(float level) {
     // 移動速度の調整
     cameraSpeed = 80.0f + level * 40.0f;
     walkSpeed = 1.5f + level * 0.8f;
+}
+
+// 成長システムの実装
+void BuildingPerspectiveSystem::updateBuildingGrowth(Building& building, float deltaTime) {
+    building.age += deltaTime;
+    
+    // 成長進行度を更新
+    building.growthProgress += deltaTime * building.growthRate * globalGrowthRate;
+    
+    // 成長レベルの更新
+    if (building.growthProgress >= 1.0f && building.growthLevel < 5) {
+        building.growthLevel++;
+        building.growthProgress = 0.0f;
+        
+        // 成長タイプの更新
+        BuildingGrowthType newType = getNextGrowthType(building.growthType);
+        if (newType != building.growthType) {
+            building.growthType = newType;
+            updateBuildingType(building);
+        }
+        
+        // 子建物の派生チェック
+        if (building.canSpawnChildren && building.growthLevel >= 2 && 
+            ofRandom(1.0f) < building.spawnProbability && 
+            ofGetElapsedTimef() - lastSpawnTime > spawnCooldown) {
+            spawnChildBuilding(building);
+            lastSpawnTime = ofGetElapsedTimef();
+        }
+    }
+    
+    // 建物の成長を適用
+    growBuilding(building, deltaTime);
+}
+
+void BuildingPerspectiveSystem::spawnChildBuilding(Building& parent) {
+    // 親建物の周りに子建物を生成
+    Building child;
+    
+    // 親の近くに配置
+    float offsetX = ofRandom(-60.0f, 60.0f);
+    float offsetZ = ofRandom(-40.0f, 40.0f);
+    
+    child.position = parent.position;
+    child.position.x += offsetX;
+    child.position.z += offsetZ;
+    child.position.y = 0;
+    
+    // 初期設定
+    child.growthType = FOUNDATION;
+    child.growthLevel = 0;
+    child.growthProgress = 0.0f;
+    child.age = 0.0f;
+    child.parent = &parent;
+    child.growthRate = ofRandom(0.8f, 1.2f);
+    child.maxHeight = parent.maxHeight * ofRandom(0.6f, 1.2f);
+    child.spawnProbability = parent.spawnProbability * 0.7f;
+    
+    // 初期サイズ（親より小さめ）
+    float scale = ofRandom(0.6f, 0.9f);
+    child.size = parent.size * scale;
+    child.size.y = ofRandom(15.0f, 30.0f);  // 低い初期高さ
+    
+    child.rotationY = ofRandom(-15.0f, 15.0f);
+    child.spawnTime = ofGetElapsedTimef();
+    
+    generateBuildingByType(child, child.growthType);
+    
+    // 親の子リストに追加
+    parent.children.push_back(&buildings.back());
+    
+    buildings.push_back(child);
+}
+
+void BuildingPerspectiveSystem::growBuilding(Building& building, float deltaTime) {
+    // 高さの成長
+    float targetHeight = building.maxHeight * (building.growthLevel + building.growthProgress) / 5.0f;
+    targetHeight = ofClamp(targetHeight, 20.0f, building.maxHeight);
+    
+    building.size.y = ofLerp(building.size.y, targetHeight, deltaTime * 2.0f);
+    
+    // 幅の成長（高層ビルは細くなる）
+    if (building.growthType >= HIGH_RISE) {
+        float targetWidth = building.size.x * (1.0f - building.growthLevel * 0.05f);
+        building.size.x = ofLerp(building.size.x, targetWidth, deltaTime * 1.0f);
+        building.size.z = ofLerp(building.size.z, targetWidth, deltaTime * 1.0f);
+    }
+}
+
+BuildingGrowthType BuildingPerspectiveSystem::getNextGrowthType(BuildingGrowthType current) {
+    switch (current) {
+        case FOUNDATION: return LOW_RISE;
+        case LOW_RISE: return MID_RISE;
+        case MID_RISE: return HIGH_RISE;
+        case HIGH_RISE: return SKYSCRAPER;
+        case SKYSCRAPER: return COMPLEX;
+        case COMPLEX: return COMPLEX;  // 最大
+        default: return FOUNDATION;
+    }
+}
+
+void BuildingPerspectiveSystem::updateBuildingType(Building& building) {
+    // 成長タイプに応じて建物を再生成
+    generateBuildingByType(building, building.growthType);
+}
+
+ofColor BuildingPerspectiveSystem::getBuildingColorByType(BuildingGrowthType type, int level) {
+    ofColor baseColor;
+    
+    switch (type) {
+        case FOUNDATION:
+            baseColor = buildingDark;
+            break;
+        case LOW_RISE:
+            baseColor = buildingMedium;
+            break;
+        case MID_RISE:
+            baseColor = buildingLight;
+            break;
+        case HIGH_RISE:
+            baseColor = ofColor(buildingLight.r + 20, buildingLight.g + 20, buildingLight.b + 20);
+            break;
+        case SKYSCRAPER:
+            baseColor = ofColor(buildingLight.r + 40, buildingLight.g + 40, buildingLight.b + 40);
+            break;
+        case COMPLEX:
+            baseColor = ofColor(buildingLight.r + 60, buildingLight.g + 60, buildingLight.b + 60);
+            break;
+    }
+    
+    // 成長レベルに応じて明度調整
+    float brightness = 1.0f + level * 0.1f;
+    baseColor.r = ofClamp(baseColor.r * brightness, 0, 255);
+    baseColor.g = ofClamp(baseColor.g * brightness, 0, 255);
+    baseColor.b = ofClamp(baseColor.b * brightness, 0, 255);
+    
+    return baseColor;
+}
+
+void BuildingPerspectiveSystem::generateBuildingByType(Building& building, BuildingGrowthType type) {
+    // タイプに応じて建物の形状や特性を設定
+    building.faces.clear();
+    building.edges.clear();
+    
+    switch (type) {
+        case FOUNDATION:
+            // 基礎はシンプルな立方体
+            break;
+        case LOW_RISE:
+            // 低層ビルは幅広
+            building.size.x *= 1.2f;
+            building.size.z *= 1.2f;
+            break;
+        case MID_RISE:
+            // 中層ビルはバランスの取れた形
+            break;
+        case HIGH_RISE:
+            // 高層ビルは細く高く
+            building.size.x *= 0.8f;
+            building.size.z *= 0.8f;
+            break;
+        case SKYSCRAPER:
+            // 超高層ビルは非常に細く高く
+            building.size.x *= 0.6f;
+            building.size.z *= 0.6f;
+            building.maxHeight *= 1.5f;
+            break;
+        case COMPLEX:
+            // 複合建物は複雑な形状
+            building.canSpawnChildren = true;
+            building.spawnProbability *= 1.5f;
+            break;
+    }
+    
+    createBuildingGeometry(building);
 }
